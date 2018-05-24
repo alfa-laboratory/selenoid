@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 
 	"github.com/aerokube/selenoid/config"
+	"github.com/aerokube/selenoid/mesos/scheduler"
 	"github.com/aerokube/selenoid/protect"
 	"github.com/aerokube/selenoid/service"
 	"github.com/aerokube/selenoid/session"
@@ -85,6 +86,8 @@ var (
 	queue                    *protect.Queue
 	manager                  service.Manager
 	cli                      *client.Client
+	mesosMasterURL           string
+	zookeeper                string
 
 	startTime = time.Now()
 
@@ -117,6 +120,8 @@ func init() {
 	flag.BoolVar(&disablePrivileged, "disable-privileged", false, "Whether to disable privileged container mode")
 	flag.StringVar(&videoOutputDir, "video-output-dir", "video", "Directory to save recorded video to")
 	flag.StringVar(&videoRecorderImage, "video-recorder-image", "selenoid/video-recorder", "Image to use as video recorder")
+	flag.StringVar(&mesosMasterURL, "mesos", "", "URL to mesos master")
+	flag.StringVar(&zookeeper, "zk", "", "URL to zookeeper cluster")
 	flag.Parse()
 
 	if version {
@@ -169,6 +174,8 @@ func init() {
 		VideoOutputDir:      videoOutputDir,
 		VideoContainerImage: videoRecorderImage,
 		Privileged:          !disablePrivileged,
+		MesosMasterUrl:      mesosMasterURL,
+		Zookeeper:           zookeeper,
 	}
 	if disableDocker {
 		manager = &service.DefaultManager{Environment: &environment, Config: conf}
@@ -199,6 +206,12 @@ func init() {
 		log.Fatalf("[-] [INIT] [New docker client: %v]", err)
 	}
 	manager = &service.DefaultManager{Environment: &environment, Client: cli, Config: conf}
+
+	if mesosMasterURL != "" {
+		log.Printf("[TRY TO REGISTER ON MESOS MASTER] [%s]", mesosMasterURL)
+		go scheduler.Run(mesosMasterURL, zookeeper, float64(cpu), float64(mem))
+	}
+
 }
 
 func cancelOnSignal() {
