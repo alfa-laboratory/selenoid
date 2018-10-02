@@ -10,10 +10,7 @@
 [[projects]]
   branch = "master"
   name = "github.com/aandryashin/matchers"
-  packages = [
-    ".",
-    "httpresp"
-  ]
+  packages = [".","httpresp"]
   revision = "435295ea180e58dbfa526db1ebab8c801b4c2b75"
 
 [[projects]]
@@ -27,14 +24,14 @@
 
 [[projects]]
   name = "github.com/docker/distribution"
-  packages = [
-    "digestset",
-    "reference"
-  ]
+  packages = ["digestset","reference"]
   revision = "277ed486c948042cab91ad367c379524f3b25e18"
 
 [[projects]]
   name = "github.com/docker/docker"
+<<<<<<< HEAD
+  packages = ["api","api/types","api/types/blkiodev","api/types/container","api/types/events","api/types/filters","api/types/image","api/types/mount","api/types/network","api/types/registry","api/types/strslice","api/types/swarm","api/types/swarm/runtime","api/types/time","api/types/versions","api/types/volume","client","pkg/stdcopy"]
+=======
   packages = [
     "api",
     "api/types",
@@ -55,15 +52,12 @@
     "client",
     "pkg/stdcopy"
   ]
+>>>>>>> selenoid-mesos
   revision = "635f359f8b61887faa9427d9c673be96faf992b5"
 
 [[projects]]
   name = "github.com/docker/go-connections"
-  packages = [
-    "nat",
-    "sockets",
-    "tlsconfig"
-  ]
+  packages = ["nat","sockets","tlsconfig"]
   revision = "3ede32e2033de7505e6500d6c868c2b9ed9f169d"
   version = "v0.3.0"
 
@@ -87,10 +81,7 @@
 
 [[projects]]
   name = "github.com/opencontainers/image-spec"
-  packages = [
-    "specs-go",
-    "specs-go/v1"
-  ]
+  packages = ["specs-go","specs-go/v1"]
   revision = "d60099175f88c47cd379c4738d158884749ed235"
   version = "v1.0.1"
 
@@ -108,19 +99,8 @@
 
 [[projects]]
   branch = "master"
-  name = "github.com/samuel/go-zookeeper"
-  packages = ["zk"]
-  revision = "c4fab1ac1bec58281ad0667dc3f0907a9476ac47"
-
-[[projects]]
-  branch = "master"
   name = "golang.org/x/net"
-  packages = [
-    "context",
-    "context/ctxhttp",
-    "proxy",
-    "websocket"
-  ]
+  packages = ["context","context/ctxhttp","proxy","websocket"]
   revision = "5ccada7d0a7ba9aeb5d3aca8d3501b4c2a509fec"
 
 [[projects]]

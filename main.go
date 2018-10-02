@@ -71,23 +71,23 @@ var (
 	maxTimeout               time.Duration
 	newSessionAttemptTimeout time.Duration
 	sessionDeleteTimeout     time.Duration
-	serviceStartupTimeout    time.Duration
-	limit                    int
-	retryCount               int
-	containerNetwork         string
-	sessions                 = session.NewMap()
-	confPath                 string
-	logConfPath              string
-	captureDriverLogs        bool
-	disablePrivileged        bool
-	videoOutputDir           string
-	videoRecorderImage       string
-	conf                     *config.Config
-	queue                    *protect.Queue
-	manager                  service.Manager
-	cli                      *client.Client
-	mesosMasterURL           string
-	zookeeper                string
+	serviceStartupTimeout time.Duration
+	limit                 int
+	retryCount            int
+	containerNetwork      string
+	sessions                               = session.NewMap()
+	confPath              string
+	logConfPath           string
+	captureDriverLogs     bool
+	disablePrivileged     bool
+	videoOutputDir        string
+	videoRecorderImage    string
+	conf                  *config.Config
+	queue                 *protect.Queue
+	manager               service.Manager
+	cli                   *client.Client
+	mesosMasterURL        string
+	zookeeper             string
 
 	startTime = time.Now()
 
@@ -120,8 +120,6 @@ func init() {
 	flag.BoolVar(&disablePrivileged, "disable-privileged", false, "Whether to disable privileged container mode")
 	flag.StringVar(&videoOutputDir, "video-output-dir", "video", "Directory to save recorded video to")
 	flag.StringVar(&videoRecorderImage, "video-recorder-image", "selenoid/video-recorder", "Image to use as video recorder")
-	flag.StringVar(&mesosMasterURL, "mesos", "", "URL to mesos master")
-	flag.StringVar(&zookeeper, "zk", "", "URL to zookeeper cluster")
 	flag.Parse()
 
 	if version {
@@ -211,7 +209,6 @@ func init() {
 		log.Printf("[TRY TO REGISTER ON MESOS MASTER] [%s]", mesosMasterURL)
 		go scheduler.Run(mesosMasterURL, zookeeper, float64(cpu), float64(mem))
 	}
-
 }
 
 func cancelOnSignal() {
