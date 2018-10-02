@@ -26,7 +26,7 @@ type Environment struct {
 	VideoContainerImage string
 	Privileged          bool
 	MesosMasterUrl      string
-	Zookeeper			string
+	Zookeeper           string
 }
 
 const (

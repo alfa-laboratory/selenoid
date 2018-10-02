@@ -16,7 +16,10 @@
 [[projects]]
   branch = "master"
   name = "github.com/aerokube/util"
-  packages = [".","docker"]
+  packages = [
+    ".",
+    "docker"
+  ]
   revision = "2fa5cda33a2e16b7639e40386ca232c9f6cf9475"
 
 [[projects]]
@@ -26,7 +29,30 @@
 
 [[projects]]
   name = "github.com/docker/docker"
+<<<<<<< HEAD
   packages = ["api","api/types","api/types/blkiodev","api/types/container","api/types/events","api/types/filters","api/types/image","api/types/mount","api/types/network","api/types/registry","api/types/strslice","api/types/swarm","api/types/swarm/runtime","api/types/time","api/types/versions","api/types/volume","client","pkg/stdcopy"]
+=======
+  packages = [
+    "api",
+    "api/types",
+    "api/types/blkiodev",
+    "api/types/container",
+    "api/types/events",
+    "api/types/filters",
+    "api/types/image",
+    "api/types/mount",
+    "api/types/network",
+    "api/types/registry",
+    "api/types/strslice",
+    "api/types/swarm",
+    "api/types/swarm/runtime",
+    "api/types/time",
+    "api/types/versions",
+    "api/types/volume",
+    "client",
+    "pkg/stdcopy"
+  ]
+>>>>>>> selenoid-mesos
   revision = "635f359f8b61887faa9427d9c673be96faf992b5"
 
 [[projects]]
@@ -86,6 +112,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "4515fd43fa0e85450a97e08a874ade4b0a2684d6925ac763ba2080a61848600a"
+  inputs-digest = "00763cd019be06ac526f7f536b5aa46c92965a2feb261722e29259449e2ab90f"
   solver-name = "gps-cdcl"
   solver-version = 1

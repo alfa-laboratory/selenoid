@@ -91,9 +91,9 @@ type ReconcileMessage struct {
 }
 
 type FrameworkInfo struct {
-	User  string   `json:"user"`
-	Name  string   `json:"name"`
-	Roles []string `json:"roles"`
+	User        string `json:"user"`
+	Name        string `json:"name"`
+	FrameworkId ID     `json:"framework_id,omitempty"`
 }
 
 type Subscribe struct {
@@ -106,8 +106,7 @@ type SubscribeMessage struct {
 }
 
 type Decline struct {
-	OfferIds []ID    `json:"offer_ids"`
-	Filters  Filters `json:"filters"`
+	OfferIds []ID `json:"offer_ids"`
 }
 
 type DeclineMessage struct {
@@ -123,7 +122,6 @@ type Filters struct {
 type Accept struct {
 	OfferIds   []ID         `json:"offer_ids"`
 	Operations *[]Operation `json:"operations"`
-	Filters    Filters      `json:"filters"`
 }
 
 type AcceptMessage struct {
@@ -229,27 +227,30 @@ func newLaunchTaskInfo(resource ResourcesForOneTask, task Task) *Launch {
 	return &Launch{TaskInfos: []TaskInfo{taskInfo}}
 }
 
-func newOperations(resources []ResourcesForOneTask, tasks []Task) *[]Operation {
+func newOperations(resources []ResourcesForOneTask, tasks []Task) (*[]Operation, map[string]string) {
+	hostsMap := make(map[string]string)
 	var operations []Operation
 	for i, task := range tasks {
+		resource := resources[i]
+		hostsMap[task.TaskId] = resource.AgentHost
 		operations = append(operations, Operation{
 			Type:   "LAUNCH",
-			Launch: newLaunchTaskInfo(resources[i], task),
+			Launch: newLaunchTaskInfo(resource, task),
 		})
 	}
-	return &operations
+	return &operations, hostsMap
 }
 
-func (scheduler *Scheduler) newAcceptMessage(resources []ResourcesForOneTask, tasks []Task) AcceptMessage {
+func (scheduler *Scheduler) newAcceptMessage(resources []ResourcesForOneTask, tasks []Task) (AcceptMessage, map[string]string) {
+	operations, hostsMap := newOperations(resources, tasks)
 	return AcceptMessage{
 		FrameworkID: scheduler.FrameworkId,
 		Type:        "ACCEPT",
 		Accept: Accept{
 			getUniqueOfferIds(resources),
-			newOperations(resources, tasks),
-			Filters{RefuseSeconds: 1.0},
+			operations,
 		},
-	}
+	}, hostsMap
 }
 
 func getUniqueOfferIds(resources []ResourcesForOneTask) []ID {
@@ -260,22 +261,26 @@ func getUniqueOfferIds(resources []ResourcesForOneTask) []ID {
 			offersMap[v.OfferId] = true
 		}
 	}
-	for k, _ := range offersMap {
+	for k := range offersMap {
 		set = append(set, k)
 	}
 	return set
 }
-func newSubscribedMessage(user string, name string, roles []string) SubscribeMessage {
-	return SubscribeMessage{
+
+func newSubscribedMessage(user string, name string, frameworkId ID) SubscribeMessage {
+	subscribedMessage := SubscribeMessage{
 		Type: "SUBSCRIBE",
 		Subscribe: Subscribe{
 			FrameworkInfo{
-				User:  user,
-				Name:  name,
-				Roles: roles,
+				User: user,
+				Name: name,
 			},
 		},
 	}
+	if frameworkId.Value != "" {
+		subscribedMessage.Subscribe.FrameworkInfo.FrameworkId = frameworkId
+	}
+	return subscribedMessage
 }
 
 func newAcknowledgeMessage(frameworkId ID, agentId ID, UUID string, taskId ID) AcknowledgeMessage {
@@ -290,15 +295,12 @@ func newAcknowledgeMessage(frameworkId ID, agentId ID, UUID string, taskId ID) A
 	}
 }
 
-func newDeclineMessage(frameworkId ID, offerId []ID) DeclineMessage {
+func newDeclineMessage(frameworkId ID, offerIds []ID) DeclineMessage {
 	return DeclineMessage{
 		FrameworkID: frameworkId,
 		Type:        "DECLINE",
 		Decline: Decline{
-			OfferIds: offerId,
-			Filters: Filters{
-				RefuseSeconds: 1.0,
-			},
+			OfferIds: offerIds,
 		},
 	}
 }
@@ -313,7 +315,7 @@ func newKillMessage(frameworkId ID, taskId string) KillMessage {
 	}
 }
 
-func GetReconcileMessage(frameworkId ID, tasksId ID, agentId ID) (ReconcileMessage) {
+func newReconcileMessage(frameworkId ID, tasksId ID, agentId ID) ReconcileMessage {
 	tasks := Tasks{
 		TaskID:  tasksId,
 		AgentID: agentId,

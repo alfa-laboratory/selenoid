@@ -9,6 +9,7 @@ import (
 	"github.com/aerokube/selenoid/mesos/zookeeper"
 	"log"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 )
@@ -20,7 +21,7 @@ var (
 	MemLimit float64
 )
 
-const schedulerUrlTemplate = "[MASTER]/api/v1/scheduler"
+const schedulerPath = "/api/v1/scheduler"
 
 type Task struct {
 	TaskId        string
@@ -74,6 +75,9 @@ type Message struct {
 			Reason     string `json:"reason"`
 		}
 	}
+	Error struct {
+		Message string `json:"message"`
+	}
 	Type string
 }
 
@@ -85,9 +89,15 @@ type Offer struct {
 }
 
 type ResourcesForOneTask struct {
-	OfferId ID
-	AgentId ID
+	OfferId   ID
+	AgentId   ID
+	AgentHost string
 	Range
+}
+
+type Info struct {
+	ReturnChannel chan *DockerInfo
+	AgentHost     string
 }
 
 func Run(URL string, zookeeperUrl string, cpu float64, mem float64) {
@@ -95,19 +105,19 @@ func Run(URL string, zookeeperUrl string, cpu float64, mem float64) {
 		zookeeper.Zk = &zookeeper.Zoo{
 			Url: zookeeperUrl,
 		}
-		Sched = &Scheduler{
-			Url: zookeeper.DetectMaster() + "/api/v1/scheduler"}
-
 		zookeeper.Create()
-	} else {
-		Sched = &Scheduler{
-			Url: strings.Replace(schedulerUrlTemplate, "[MASTER]", URL, 1)}
 	}
+	schedulerUrl := createSchedulerUrl(URL)
+	log.Printf("[-] [MESOS_URL_DETECTED] [%s]", schedulerUrl)
+	Sched = &Scheduler{Url: schedulerUrl}
 	setResourceLimits(cpu, mem)
-	notRunningTasks := make(map[string]chan *DockerInfo)
+	notRunningTasks := make(map[string]*Info)
 
-	body, _ := json.Marshal(newSubscribedMessage("root", "My first framework", []string{"test"}))
-
+	frameworkId := ""
+	if zookeeperUrl != "" && zookeeper.GetFrameworkInfo() != nil {
+		frameworkId = zookeeper.GetFrameworkInfo()[0]
+	}
+	body, _ := json.Marshal(newSubscribedMessage("root", "Selenoid", ID{frameworkId}))
 	resp, err := http.Post(Sched.Url, "application/json", bytes.NewReader(body))
 	if err != nil {
 		log.Fatal(err)
@@ -131,7 +141,15 @@ func Run(URL string, zookeeperUrl string, cpu float64, mem float64) {
 			json.Unmarshal([]byte(jsonMessage), &m)
 			switch m.Type {
 			case "SUBSCRIBED":
-				Sched.FrameworkId = m.Subscribed.FrameworkId
+				frameworkId := m.Subscribed.FrameworkId
+				if zookeeperUrl != "" {
+					frameworkInfo := zookeeper.GetFrameworkInfo()
+					if frameworkInfo == nil || !contains(frameworkInfo, frameworkId.Value) {
+						zookeeper.CreateFrameworkNode(frameworkId.Value)
+					}
+				}
+				log.Printf("[-] [SELENOID_SUBSCRIBED_AS_FRAMEWORK_ON_MESOS_MASTER] [%s]", frameworkId)
+				Sched.FrameworkId = frameworkId
 				break
 			case "OFFERS":
 				processOffers(m, notRunningTasks)
@@ -140,7 +158,10 @@ func Run(URL string, zookeeperUrl string, cpu float64, mem float64) {
 				processUpdate(m, notRunningTasks, zookeeperUrl)
 				break
 			case "FAILURE":
-				fmt.Println("Bce плохо")
+				log.Fatal("Mesos return FAILURE with message: " + m.Error.Message)
+				break
+			case "ERROR":
+				log.Fatal("Mesos return ERROR with message: " + m.Error.Message)
 				break
 			default:
 				break
@@ -149,77 +170,80 @@ func Run(URL string, zookeeperUrl string, cpu float64, mem float64) {
 	}
 }
 
-func processUpdate(m Message, notRunningTasks map[string]chan *DockerInfo, zookeeperUrl string) {
+func processUpdate(m Message, notRunningTasks map[string]*Info, zookeeperUrl string) {
 	status := m.Update.Status
 	state := status.State
 	taskId := status.TaskId.Value
 	Sched.Acknowledge(status.AgentId, status.Uuid, status.ExecutorId)
+	log.Printf("[-] [MESOS_TASK_HAVE_STATE] [%s] [%s]\n", taskId, state)
 	if state == "TASK_RUNNING" {
 		n, _ := base64.StdEncoding.DecodeString(status.Data)
 		var data []DockerInfo
 		json.Unmarshal(n, &data)
 		container := &data[0]
-		channel, _ := notRunningTasks[taskId]
+		container.AgentHost = notRunningTasks[taskId].AgentHost
+		channel := notRunningTasks[taskId].ReturnChannel
 		channel <- container
 		delete(notRunningTasks, taskId)
 		if zookeeperUrl != "" {
 			zookeeper.CreateTaskNode(status.TaskId.Value, status.AgentId.Value)
 		}
-	} else if state == "TASK_KILLED" {
-		fmt.Println("Exterminate! Exterminate! Exterminate!")
+	} else if state == "TASK_FAILED" || state == "TASK_ERROR" {
+		processFailedTask(taskId, notRunningTasks, m)
 	} else if state == "TASK_LOST" {
 		if zookeeperUrl != "" && notRunningTasks[taskId] != nil {
-			var agentId = zookeeper.GetAgentIdForTask(taskId);
+			var agentId = zookeeper.GetAgentIdForTask(taskId)
 			Sched.Reconcile(status.TaskId, ID{agentId})
-			msg := "Задача " + taskId + " для агента " + agentId + " потеряна, но хочеть жить снова и сделала RECONCILIATION"
-			log.Print(msg)
-		} else if (status.Reason == "REASON_RECONCILIATION") {
-			msg := "У нас прблемы! Невозможно сделать RECONCILIATION задачи " + taskId + " по причине " + status.Source + "-" + status.State + "-" + status.Message
-			log.Print(msg)
-		}
-	} else {
-		msg := "Галактика в опасности! Задача " + taskId + " непредвиденно упала по причине " + status.Source + "-" + status.State + "-" + status.Message
-		if notRunningTasks[taskId] != nil {
-			container := &DockerInfo{ErrorMsg: msg}
-			channel, _ := notRunningTasks[taskId]
-			channel <- container
-			delete(notRunningTasks, taskId)
-		} else {
-			log.Panic(msg)
+			log.Printf("[-] [SELENOID_MAKES_RECONCILIATION] [%s] [%s]", taskId, agentId)
+		} else if status.Reason == "REASON_RECONCILIATION" {
+			processFailedTask(taskId, notRunningTasks, m)
 		}
 	}
 }
 
-func processOffers(m Message, notRunningTasks map[string]chan *DockerInfo) {
+func processFailedTask(taskId string, notRunningTasks map[string]*Info, m Message) {
+	status := m.Update.Status
+	msg := "Task with id [" + taskId + "] has been failed by the reason [" + status.Source + "-" + status.State + "-" + status.Message + "]"
+	if notRunningTasks[taskId] != nil {
+		container := &DockerInfo{ErrorMsg: msg}
+		channel := notRunningTasks[taskId].ReturnChannel
+		channel <- container
+		delete(notRunningTasks, taskId)
+	} else {
+		log.Panic(msg)
+	}
+}
+
+func processOffers(m Message, notRunningTasks map[string]*Info) {
 	var offersIds []ID
 	offers := m.Offers.Offers
 	for _, n := range offers {
 		offersIds = append(offersIds, n.Id)
-		fmt.Println(offersIds)
 	}
 	tasksCanRun, resourcesForTasks := getTotalOffersCapacity(offers)
-	log.Printf("[MESOS CONTAINERS CAN BE RUN NOW] [%d]\n", tasksCanRun)
-	log.Printf("[CURRENT FREE MESOS CONTAINERS RESOURCES] [%v]\n", resourcesForTasks)
+	log.Printf("[-] [MESOS_HAS_RESOURCES_FOR_TASKS] [%d]\n", tasksCanRun)
 	var tasks []Task
 	if tasksCanRun == 0 {
-		fmt.Println("nothing ready")
+		log.Println("[-] [MESOS_HAS_NO_RESOURCES_FOR_RUNNING_TASKS]")
 		Sched.Decline(offersIds)
 	} else {
 	Loop:
 		for i := 0; i < tasksCanRun; i++ {
 			select {
 			case task := <-channel:
-				notRunningTasks[task.TaskId] = task.ReturnChannel
+				notRunningTasks[task.TaskId] = &Info{ReturnChannel: task.ReturnChannel}
 				tasks = append(tasks, task)
 			default:
-				fmt.Println("Задачки закончились")
 				break Loop
 			}
 		}
 		if len(tasks) == 0 {
 			Sched.Decline(offersIds)
 		} else {
-			Sched.Accept(resourcesForTasks[:len(tasks)], tasks)
+			hostMap := Sched.Accept(resourcesForTasks[:len(tasks)], tasks)
+			for k, v := range hostMap {
+				notRunningTasks[k].AgentHost = v
+			}
 		}
 	}
 }
@@ -234,7 +258,7 @@ func setResourceLimits(cpu float64, mem float64) {
 	if mem > 0 {
 		MemLimit = mem
 	} else {
-		MemLimit = 128
+		MemLimit = 256
 	}
 }
 
@@ -282,7 +306,7 @@ func getResourcesForTasks(offer Offer, offerCapacity int, ranges []Range) []Reso
 		portsEnd := ranges[i].End
 		for portsEnd-portsBegin >= 1 && len(resourcesForTasks) != offerCapacity {
 			portRange := Range{portsBegin, portsBegin + 1}
-			resourcesForTasks = append(resourcesForTasks, ResourcesForOneTask{offer.Id, offer.AgentId, portRange})
+			resourcesForTasks = append(resourcesForTasks, ResourcesForOneTask{offer.Id, offer.AgentId, offer.Hostname, portRange})
 			portsBegin = portsBegin + 2
 		}
 
@@ -292,4 +316,26 @@ func getResourcesForTasks(offer Offer, offerCapacity int, ranges []Range) []Reso
 
 func (task Task) SendToMesos() {
 	channel <- task
+}
+
+func createSchedulerUrl(rawurl string) string {
+	flagUrl, err := url.Parse(rawurl)
+	if err != nil {
+		log.Fatal("Error while parsing url " + rawurl)
+	}
+
+	if flagUrl.Scheme == "zk" {
+		return zookeeper.DetectMaster(flagUrl) + schedulerPath
+	} else {
+		return rawurl + schedulerPath
+	}
+}
+
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }

@@ -1,14 +1,14 @@
 package scheduler
 
 import (
-	"fmt"
-	"net/http"
 	"bytes"
 	"encoding/json"
 	"log"
+	"net/http"
 )
 
 func (s *Scheduler) Decline(offers []ID) {
+	log.Printf("[-] [SELENOID_DECLINED_CURRENT_OFFERS]")
 	body, _ := json.Marshal(newDeclineMessage(s.FrameworkId, offers))
 	_, err := s.sendToStream(body)
 	if err != nil {
@@ -16,20 +16,14 @@ func (s *Scheduler) Decline(offers []ID) {
 	}
 }
 
-func (s *Scheduler) Accept(resources []ResourcesForOneTask, tasks []Task) {
-	body, _ := json.Marshal(s.newAcceptMessage(resources, tasks))
-
-	fmt.Println(string(body))
-
-	resp, err := s.sendToStream(body)
+func (s *Scheduler) Accept(resources []ResourcesForOneTask, tasks []Task) map[string]string {
+	acceptMessage, hostMap := s.newAcceptMessage(resources, tasks)
+	body, _ := json.Marshal(acceptMessage)
+	_, err := s.sendToStream(body)
 	if err != nil {
 		panic(err)
 	}
-
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(resp.Body)
-	fmt.Println(buf.String())
-	fmt.Println(resp.Status)
+	return hostMap
 }
 
 func (s *Scheduler) Acknowledge(agentId ID, uuid string, taskId ID) {
@@ -40,20 +34,15 @@ func (s *Scheduler) Acknowledge(agentId ID, uuid string, taskId ID) {
 	}
 }
 
-func (s *Scheduler) Kill(taskId string) {
-	log.Printf("[%d] [REMOVING_CONTAINER] [%s]\n")
+func (s *Scheduler) Kill(requestId uint64, taskId string) {
+	log.Printf("[%d] [REMOVING_CONTAINER] [%s]\n", requestId, taskId)
 	body, _ := json.Marshal(newKillMessage(s.FrameworkId, taskId))
-	resp, err := s.sendToStream(body)
+	_, err := s.sendToStream(body)
 	if err != nil {
 		log.Printf("[FAILED_TO_REMOVE_CONTAINER] [%v]\n", err)
 		return
 	}
-	log.Printf("[%d] [CONTAINER_REMOVED] [%s]\n")
-
-	buf := new(bytes.Buffer)
-	buf.ReadFrom(resp.Body)
-	fmt.Println(buf.String())
-	fmt.Println(resp.Status)
+	log.Printf("[%d] [CONTAINER_REMOVED] [%s]\n", requestId, taskId)
 }
 
 func (s *Scheduler) sendToStream(body []byte) (*http.Response, error) {
@@ -68,8 +57,7 @@ func (s *Scheduler) sendToStream(body []byte) (*http.Response, error) {
 }
 
 func (s *Scheduler) Reconcile(taskId ID, agentId ID) {
-	body, _ := json.Marshal(GetReconcileMessage(s.FrameworkId, taskId, agentId))
-	fmt.Println(string(body))
+	body, _ := json.Marshal(newReconcileMessage(s.FrameworkId, taskId, agentId))
 	_, err := s.sendToStream(body)
 	if err != nil {
 		panic(err)
